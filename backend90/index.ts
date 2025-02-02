@@ -29,7 +29,7 @@ let canvasPixel: Pixel[] = [];
 router.ws('/canvas', (ws, req) => {
     connectedClients.push(ws);
 
-    ws.send(JSON.stringify({ type: 'INIT_CANVAS', payload: JSON.stringify(canvasPixel) }));
+    ws.send(JSON.stringify({ type: 'INIT_CANVAS', payload: JSON.stringify([]) }));
 
     ws.on('message', (message) => {
         try {
@@ -39,6 +39,8 @@ router.ws('/canvas', (ws, req) => {
                 const newPixel: Pixel = JSON.parse(decodedMessage.payload);
 
                 canvasPixel.push(newPixel);
+
+                console.log('New pixel drawn:', newPixel);
 
                 connectedClients.forEach((clientWs) => {
                     clientWs.send(JSON.stringify({
@@ -54,7 +56,10 @@ router.ws('/canvas', (ws, req) => {
 
     ws.on('close', () => {
         const index = connectedClients.indexOf(ws);
-        connectedClients.splice(index, 1);
+        if (index !== -1) {
+            connectedClients.splice(index, 1);
+            console.log('Client disconnected. Remaining clients:', connectedClients.length);
+        }
     });
 });
 

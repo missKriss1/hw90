@@ -1,35 +1,109 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import { useEffect, useRef, useState } from "react";
 
-function App() {
-  const [count, setCount] = useState(0)
-
-  return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+interface Pixel {
+    x: number;
+    y: number;
+    color: string;
 }
 
-export default App
+const App = () => {
+    const canvasRef = useRef<HTMLCanvasElement | null>(null);
+    const [webSocket, setWebSocket] = useState<WebSocket | null>(null);
+
+    useEffect(() => {
+        const ws = new WebSocket('ws://localhost:8000/canvas');
+        setWebSocket(ws);
+
+
+        ws.onclose = () => console.log('Connection closed');
+
+        ws.onmessage = (e) => {
+            const decodedMessage = JSON.parse(e.data);
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+
+            const context = canvas.getContext('2d');
+            if (context) {
+                if (decodedMessage.type === 'NEW_CANVAS' || decodedMessage.type === 'INIT_CANVAS') {
+                    const pixels: Pixel[] = JSON.parse(decodedMessage.payload);
+                    pixels.forEach(pixel => {
+                        context.fillStyle = pixel.color;
+                        context.fillRect(pixel.x, pixel.y, 1, 1);
+                    });
+                }
+            }
+        };
+
+        return () => {
+            if (ws) {
+                ws.close();
+            }
+        };
+    }, []);
+
+    const sendPixel = (x: number, y: number, color: string) => {
+        if (!webSocket) return;
+
+        const pixel = { x, y, color };
+        webSocket.send(JSON.stringify({
+            type: 'DRAW_PIXEL',
+            payload: JSON.stringify(pixel),
+        }));
+    };
+
+    const changeMouseDown = (e: React.MouseEvent) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const context = canvas.getContext('2d');
+        if (context) {
+            context.beginPath();
+            context.moveTo(e.clientX - canvas.offsetLeft, e.clientY - canvas.offsetTop);
+        }
+    };
+
+    const changeMouseMove = (e: React.MouseEvent) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const context = canvas.getContext('2d');
+        if (context && e.buttons === 1) {
+            const x = e.clientX - canvas.offsetLeft;
+            const y = e.clientY - canvas.offsetTop;
+
+            context.lineTo(x, y);
+            context.stroke();
+
+            sendPixel(x, y, context.strokeStyle.toString());
+        }
+    };
+
+    const mouseUp = () => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const context = canvas.getContext('2d');
+        if (context) {
+            context.closePath();
+        }
+    };
+
+    return (
+        <div>
+            <h2 style={{ marginLeft: '550px', marginTop: '0px', textAlign: 'center' }}>
+                Draw the pictures
+            </h2>
+            <canvas
+                ref={canvasRef}
+                width={500}
+                height={500}
+                style={{ border: "2px solid black", marginLeft: '550px' }}
+                onMouseDown={changeMouseDown}
+                onMouseMove={changeMouseMove}
+                onMouseUp={mouseUp}
+            />
+        </div>
+    );
+};
+
+export default App;
