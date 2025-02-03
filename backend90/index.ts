@@ -1,7 +1,7 @@
-import express from "express";
+import express from 'express';
 import expressWs from 'express-ws';
-import cors from "cors";
-import { WebSocket } from "ws";
+import cors from 'cors';
+import { WebSocket } from 'ws';
 
 const app = express();
 expressWs(app);
@@ -9,43 +9,44 @@ expressWs(app);
 const port = 8000;
 app.use(cors());
 
-const router = express.Router();
-
-const connectedClients: WebSocket[] = [];
-
 interface Pixel {
     x: number;
     y: number;
     color: string;
 }
 
-interface IncomingMessage {
-    type: string;
-    payload: string;
-}
+const router = express.Router();
 
+const connectedClients: WebSocket[] = [];
 let canvasPixel: Pixel[] = [];
 
 router.ws('/canvas', (ws, req) => {
     connectedClients.push(ws);
 
-    ws.send(JSON.stringify({ type: 'INIT_CANVAS', payload: JSON.stringify([]) }));
+    ws.send(JSON.stringify({
+        type: 'INIT_PIXELS',
+        message: canvasPixel,
+    }));
 
     ws.on('message', (message) => {
         try {
-            const decodedMessage = JSON.parse(message.toString()) as IncomingMessage;
+            const decodedMessage = JSON.parse(message.toString());
 
-            if (decodedMessage.type === "DRAW_PIXEL") {
-                const newPixel: Pixel = JSON.parse(decodedMessage.payload);
-
-                canvasPixel.push(newPixel);
-
-                console.log('New pixel drawn:', newPixel);
+            if (decodedMessage.type === 'CREATE_PIXELS_ARRAY') {
+                canvasPixel = [...canvasPixel, ...decodedMessage.pixelsArray];
 
                 connectedClients.forEach((clientWs) => {
                     clientWs.send(JSON.stringify({
-                        type: 'NEW_CANVAS',
-                        payload: JSON.stringify(canvasPixel),
+                        type: 'NEW_PIXEL',
+                        message: decodedMessage.pixelsArray,
+                    }));
+                });
+            } else if (decodedMessage.type === 'CLEAR_CANVAS') {
+                canvasPixel = [];
+
+                connectedClients.forEach((clientWs) => {
+                    clientWs.send(JSON.stringify({
+                        type: 'CLEAR_CANVAS',
                     }));
                 });
             }

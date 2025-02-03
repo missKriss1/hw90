@@ -4,104 +4,161 @@ interface Pixel {
     x: number;
     y: number;
     color: string;
+    sizeCircle: number;
+}
+
+interface Canvas {
+    mouseDown: boolean;
+    pixelsArray: Pixel[];
+    color: string;
+    sizeCircle: number;
 }
 
 const App = () => {
-    const canvasRef = useRef<HTMLCanvasElement | null>(null);
+    const [state, setState] = useState<Canvas>({
+        mouseDown: false,
+        pixelsArray: [],
+        color: '#000000',
+        sizeCircle: 10,
+    });
     const [webSocket, setWebSocket] = useState<WebSocket | null>(null);
+    const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
     useEffect(() => {
         const ws = new WebSocket('ws://localhost:8000/canvas');
         setWebSocket(ws);
 
+        ws.onmessage = (event) => {
+            const decoded = JSON.parse(event.data);
 
-        ws.onclose = () => console.log('Connection closed');
-
-        ws.onmessage = (e) => {
-            const decodedMessage = JSON.parse(e.data);
-            const canvas = canvasRef.current;
-            if (!canvas) return;
-
-            const context = canvas.getContext('2d');
-            if (context) {
-                if (decodedMessage.type === 'NEW_CANVAS' || decodedMessage.type === 'INIT_CANVAS') {
-                    const pixels: Pixel[] = JSON.parse(decodedMessage.payload);
-                    pixels.forEach(pixel => {
-                        context.fillStyle = pixel.color;
-                        context.fillRect(pixel.x, pixel.y, 1, 1);
-                    });
+            if (decoded.type === 'INIT_PIXELS') {
+                decoded.message.forEach((message: Pixel) => {
+                    const canvas = canvasRef.current;
+                    if (canvas) {
+                        const context = canvas.getContext('2d');
+                        if (context) {
+                            context.fillStyle = message.color;
+                            context.beginPath();
+                            context.arc(message.x, message.y, message.sizeCircle, 0, 2 * Math.PI);
+                            context.fill();
+                        }
+                    }
+                });
+            } else if (decoded.type === 'NEW_PIXEL') {
+                decoded.message.forEach((message: Pixel) => {
+                    const canvas = canvasRef.current;
+                    if (canvas) {
+                        const context = canvas.getContext('2d');
+                        if (context) {
+                            context.fillStyle = message.color;
+                            context.beginPath();
+                            context.arc(message.x, message.y, message.sizeCircle, 0, 2 * Math.PI);
+                            context.fill();
+                        }
+                    }
+                });
+            } else if (decoded.type === 'CLEAR_CANVAS') {
+                const canvas = canvasRef.current;
+                if (canvas) {
+                    const context = canvas.getContext('2d');
+                    if (context) {
+                        context.clearRect(0, 0, canvas.width, canvas.height);
+                    }
                 }
             }
         };
 
         return () => {
-            if (ws) {
-                ws.close();
-            }
+            ws.close();
         };
     }, []);
 
-    const sendPixel = (x: number, y: number, color: string) => {
-        if (!webSocket) return;
+    const canvasMouseMoveHandler = (event: React.MouseEvent) => {
+        if (state.mouseDown) {
+            const clientX = event.nativeEvent.offsetX;
+            const clientY = event.nativeEvent.offsetY;
 
-        const pixel = { x, y, color };
-        webSocket.send(JSON.stringify({
-            type: 'DRAW_PIXEL',
-            payload: JSON.stringify(pixel),
-        }));
-    };
+            setState(prevState => ({
+                ...prevState,
+                pixelsArray: [...prevState.pixelsArray, {
+                    x: clientX,
+                    y: clientY,
+                    color: state.color,
+                    sizeCircle: state.sizeCircle
+                }]
+            }));
 
-    const changeMouseDown = (e: React.MouseEvent) => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-
-        const context = canvas.getContext('2d');
-        if (context) {
-            context.beginPath();
-            context.moveTo(e.clientX - canvas.offsetLeft, e.clientY - canvas.offsetTop);
+            const canvas = canvasRef.current;
+            if (canvas) {
+                const context = canvas.getContext('2d');
+                if (context) {
+                    context.fillStyle = state.color;
+                    context.beginPath();
+                    context.arc(clientX, clientY, state.sizeCircle, 0, 2 * Math.PI);
+                    context.fill();
+                }
+            }
         }
     };
 
-    const changeMouseMove = (e: React.MouseEvent) => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-
-        const context = canvas.getContext('2d');
-        if (context && e.buttons === 1) {
-            const x = e.clientX - canvas.offsetLeft;
-            const y = e.clientY - canvas.offsetTop;
-
-            context.lineTo(x, y);
-            context.stroke();
-
-            sendPixel(x, y, context.strokeStyle.toString());
-        }
+    const mouseDownHandler = () => {
+        setState({ ...state, mouseDown: true });
     };
 
-    const mouseUp = () => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
+    const mouseUpHandler = () => {
+        if (webSocket) {
+            webSocket.send(JSON.stringify({
+                type: 'CREATE_PIXELS_ARRAY',
+                pixelsArray: state.pixelsArray,
+            }));
+        }
+        setState({ ...state, mouseDown: false, pixelsArray: [] });
+    };
 
-        const context = canvas.getContext('2d');
-        if (context) {
-            context.closePath();
+    const clearHandler = () => {
+        if (webSocket) {
+            webSocket.send(JSON.stringify({
+                type: 'CLEAR_CANVAS',
+            }));
         }
     };
 
     return (
-        <div>
-            <h2 style={{ marginLeft: '550px', marginTop: '0px', textAlign: 'center' }}>
-                Draw the pictures
-            </h2>
+
+        <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center'}}>
+            <h2>Draw the pictures</h2>
             <canvas
                 ref={canvasRef}
+                style={{marginLeft: '100px', border: '1px solid black'}}
                 width={500}
                 height={500}
-                style={{ border: "2px solid black", marginLeft: '550px' }}
-                onMouseDown={changeMouseDown}
-                onMouseMove={changeMouseMove}
-                onMouseUp={mouseUp}
+                onMouseDown={mouseDownHandler}
+                onMouseUp={mouseUpHandler}
+                onMouseMove={canvasMouseMoveHandler}
             />
+            <div style={{marginTop: '10px'}}>
+                <button onClick={clearHandler} className='btn'>Clear canvas</button>
+                <div>
+                    <label style={{marginLeft: '20px'}}>Color:</label>
+                    <input
+                        type="color"
+                        value={state.color}
+                        onChange={(e) => setState({...state, color: e.target.value})}
+                        style={{marginTop: '20px'}}
+                    />
+                </div>
+                <div>
+                    <label style={{marginLeft: '20px'}}>Size:</label>
+                    <input
+                        type="number"
+                        value={state.sizeCircle}
+                        min={1}
+                        max={20}
+                        onChange={(e) => setState({...state, sizeCircle: +e.target.value})}
+                        style={{marginTop: '20px'}}
+                    />
+                </div>
+            </div>
         </div>
     );
 };
